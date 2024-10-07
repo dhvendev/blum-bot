@@ -127,12 +127,12 @@ class UserAgent:
 
 headers_example = {
     'Accept': 'application/json,text/plain,*/*',
-    'Accept-Language': 'en-US',
+    'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
     "Accept-Encoding": "gzip, deflate",
     'Tl-Init-Data': '',
     'Priority': "u=1, i",
-    'Origin': 'https://bybitcoinsweeper.com',
-    'Referer': 'https://bybitcoinsweeper.com/',
+    'Origin': 'https://telegram.blum.codes',
+    'Referer': 'https://telegram.blum.codes/',
     'Sec-Fetch-Dest': 'empty',
     'Sec-Fetch-Mode': 'cors',
     'Sec-Fetch-Site': 'same-site',

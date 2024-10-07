@@ -11,9 +11,9 @@ class Settings(BaseSettings):
 
     API_ID: int
     API_HASH: str
+    REF: str
 
-    REF_ID: int = 12345678 # your ref id
-    REF_LINK: str = f"https://t.me/BybitCoinsweeper_Bot?start=referredBy={REF_ID}"
+
     CHANCE_TO_WIN: int = 80
     NIGHT_SLEEP: int = 1
 
@@ -23,12 +23,8 @@ class Settings(BaseSettings):
 
     DELAY_EACH_ACCOUNT: list[int] = [20, 30]
 
-    def update_ref_link(self):
-        self.REF_LINK = f"https://t.me/BybitCoinsweeper_Bot?start=referredBy={self.REF_ID}"
-
 
 settings = Settings()
-settings.update_ref_link()
 
 async def main():
     try:

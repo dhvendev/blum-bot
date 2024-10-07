@@ -1,7 +1,7 @@
 import asyncio
 from pyrogram import Client
 import os
-from bot.core.gamer import run_gamer
+from bot.core.blum import run_gamer
 from bot.utils.logger import logger
 from bot.utils.proxy import Proxy
 from bot.utils.headers import headers_example
