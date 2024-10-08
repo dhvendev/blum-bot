@@ -18,6 +18,12 @@ class InvalidStartTgApp(BaseException):
 class InvalidLogin(BaseException):
     ...
 
+class StartGameError(BaseException):
+    ...
+
+class ClaimRewardError(BaseException):
+    ...
+
 
 class Blum:
     def __init__(self, tg_session: Client,
@@ -92,7 +98,6 @@ class Blum:
         async with session.post("https://user-domain.blum.codes/api/v1/auth/provider/PROVIDER_TELEGRAM_MINI_APP", headers=self.headers, json=payload) as res:
             res.raise_for_status()
             user_data = await res.json()
-            print(user_data)
             token = user_data.get('token', None)
             if not token:
                 raise InvalidLogin("AccessToken not found")
@@ -137,7 +142,6 @@ class Blum:
             start_param=self.referal_param
         ))
         auth_url = web_view.url
-        print(auth_url)
         tg_web_data = unquote(
             string=unquote(string=auth_url.split('tgWebAppData=')[1].split('&tgWebAppVersion')[0])
         )
@@ -153,9 +157,6 @@ class Blum:
 
     async def check_balance(self, session: CloudflareScraper) -> bool:
         async with session.get("https://game-domain.blum.codes/api/v1/user/balance", headers=self.headers) as res:
-            print(res.status)
-            print(await res.text())
-
             if res.status != 200:
                 logger.warning(f"{self.name} | <yellow>Get user balance failed: {res.status})</yellow>")
                 return False
@@ -167,27 +168,72 @@ class Blum:
             return True
 
 
+    async def start_game(self, session: CloudflareScraper) -> str | None:
+        async with session.post("https://game-domain.blum.codes/api/v1/game/play", headers=self.headers) as res:
+            if res.status != 200:
+                logger.warning(f"{self.name} | <yellow>Start game failed: {res.status})</yellow>")
+                return False
+            data = await res.json()
+            game_id = data.get('gameId', None)
+            if not game_id:
+                logger.warning(f"{self.name} | <yellow>Start game failed: GameId not found</yellow>")
+                raise StartGameError("GameId not found")
+            logger.info(f"{self.name} | <light-green>Start game: </light-green><cyan>{game_id}</cyan>")
+            return game_id
+
+
+    async def claim_reward(self, session: CloudflareScraper, game_id: str, points: int) -> bool:
+        payload = {
+            "gameId": game_id,
+            "points": points
+        }
+        async with session.post(f"https://game-domain.blum.codes/api/v1/game/claim", headers=self.headers, json=payload) as res:
+            if res.status != 200:
+                logger.warning(f"{self.name} | <yellow>Claim reward failed: {res.status})</yellow>")
+                raise ClaimRewardError(f"Claim reward failed gameId: {game_id}")
+            logger.info(f"{self.name} | <light-green>Claim reward: </light-green><cyan>{points}</cyan> with <light-blue>{game_id}</light-blue>")
+            return True
+
+
     async def start(self):
         logger.info(f"Account {self.name} | started")
         connector = self.proxy.get_connector() if isinstance(self.proxy, Proxy) else None
         client = CloudflareScraper(headers=self.headers, connector=connector)
         async with client as session:
-            try:
-                if not self.tg_session.is_connected:
-                    await self.tg_app_start()
-                await self.refresh_jwt_token(session)
-                await self.refresh_access_token(session)
-                
-                self.logged = True
-                
-                await self.check_balance(session)
+            for _ in range(10):
+                try:
+                    if not self.tg_session.is_connected:
+                        await self.tg_app_start()
+                    await self.refresh_jwt_token(session)
+                    await self.refresh_access_token(session)
+                    
+                    self.logged = True
+                    
+                    await self.check_balance(session)
 
+                    game_id = await self.start_game(session)
+                    sleep = randint(33, 50)
+                    points = randint(120, 180)
+                    logger.info(f"{self.name} | Wait <cyan>{sleep}s</cyan> to finish game...")
+                    await asyncio.sleep(sleep)
 
-                logger.info(f"{self.name} | Finished.")
+                    await self.claim_reward(session, game_id, points)
+                    
+                    logger.info(f"{self.name} | Wait checking balance...")
+                    await asyncio.sleep(randint(5, 10))
 
-            except Exception as e:
-                logger.error(f"{self.name} | Error: {e}")
-                return
+                    await self.check_balance(session)
+
+                    sleep = randint(50, 150)
+                    logger.info(f"{self.name} | Wait <cyan>{sleep}s</cyan> to start next game...")
+                    await asyncio.sleep(sleep)
+                    
+
+                except Exception as e:
+                    logger.error(f"{self.name} | Error: {e}")
+                    return
+
+        logger.info(f"Account {self.name} | finished")
 
 
 async def run_gamer(tg_session: tuple[Client, Proxy, str], settings) -> None:
