@@ -12,17 +12,13 @@ class Settings(BaseSettings):
     API_ID: int
     API_HASH: str
     REF: str
-
-
-    CHANCE_TO_WIN: int = 80
+    CLAIM_FARMING: int = 1
     NIGHT_SLEEP: int = 1
+    MIN_USE_PASSES: int = 5
+    MAX_USE_PASSES: int = 9
 
-    ROUND_COUNT_EACH_GAME: list[int] = [2, 5]        # in rounds for each game
-    TIME_TO_PLAY_EACH_GAME: list[int] = [30, 90]     # in seconds for each game
-
-
-    DELAY_EACH_ACCOUNT: list[int] = [20, 30]
-
+    GAME_TIME: list = [35, 45]
+    GAME_POINTS: list = [120, 190]
 
 settings = Settings()
 

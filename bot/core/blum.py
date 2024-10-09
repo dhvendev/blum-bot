@@ -1,5 +1,6 @@
 import asyncio
-from random import randint
+from datetime import datetime
+from random import randint, uniform
 from time import time
 from urllib.parse import unquote
 from pyrogram import Client
@@ -22,6 +23,12 @@ class StartGameError(BaseException):
     ...
 
 class ClaimRewardError(BaseException):
+    ...
+
+class StartFarmingError(BaseException):
+    ...
+
+class ClaimFarmingError(BaseException):
     ...
 
 
@@ -59,9 +66,29 @@ class Blum:
 
         self.passes = 0
         self.available_balance = ""
+        self.farming_end_time = 0
 
         self.__name_tg_bot = 'BlumCryptoBot'
         self.referal_param = settings.REF
+
+
+    async def night_sleep_check(self):
+        if bool(self.settings.NIGHT_SLEEP):
+            time_now = datetime.now()
+
+            # Start and end of the day
+            sleep_start = time_now.replace(hour=0, minute=0, second=0, microsecond=0)  # 00:00 ночи
+            sleep_end = time_now.replace(hour=8, minute=0, second=0, microsecond=0)    # 08:00 утра
+
+            if time_now >= sleep_start and time_now <= sleep_end:
+                time_to_sleep = (sleep_end - time_now).total_seconds()
+                wake_up_time = time_to_sleep + randint(0, 3600)
+
+                logger.info(f"{self.name} | Sleep until {sleep_end.strftime('%H:%M')}")
+                await asyncio.sleep(wake_up_time)
+
+            logger.info(f"{self.name} | Sleep cancelled | Now start the game")
+
 
     async def tg_app_start(self):
         try:
@@ -142,6 +169,7 @@ class Blum:
             start_param=self.referal_param
         ))
         auth_url = web_view.url
+        print(auth_url)
         tg_web_data = unquote(
             string=unquote(string=auth_url.split('tgWebAppData=')[1].split('&tgWebAppVersion')[0])
         )
@@ -163,6 +191,7 @@ class Blum:
             data = await res.json()
             self.passes = data.get('playPasses', 0)
             self.available_balance = data.get('availableBalance', "")
+            self.farming_end_time = data.get('farming', {}).get('endTime', 0)
             logger.info(f"{self.name} | Balance: <light-yellow>{self.available_balance}</light-yellow> |"
                         f"Passes: <light-yellow>{self.passes}</light-yellow>")
             return True
@@ -195,38 +224,144 @@ class Blum:
             return True
 
 
+    async def start_farming(self, session: CloudflareScraper) -> bool:
+        """
+        Start farming daily.
+
+        This method sends a POST request to start farming.
+        If the request is successful, it will update the account's farming end time.
+
+        Returns:
+            bool: True if the start is successful, False otherwise.
+        """
+        try:
+            async with session.post("https://game-domain.blum.codes/api/v1/farming/start", headers=self.headers) as res:
+                if res.status != 200:
+                    raise StartFarmingError(f"Start farming failed: {res.status}")
+                logger.info(f"{self.name} | Attempting to start farming")
+                data = await res.json()
+                self.farming_end_time = data.get('endTime')
+                return True
+        except StartFarmingError as e:
+            logger.warning(f"{self.name} | <yellow>Start farming failed: {e})</yellow>")
+        except Exception as e:
+            logger.warning(f"{self.name} | <yellow>Start farming failed: {e})</yellow>")
+        return False
+
+
+    async def claim_farming(self, session: CloudflareScraper) -> bool:
+        """
+        Claim farming reward.
+
+        This method sends a POST request to claim the farming reward.
+        If the request is successful, it will update the account balance
+        and passes.
+
+        Returns:
+            bool: True if the claim is successful, False otherwise.
+        """
+        try:
+            current_time = time()
+            if self.farming_end_time < current_time:
+                logger.info(f"{self.name} | Farming not ready")
+                return False
+            logger.info(f"{self.name} | Attempting to claim farming")
+            await asyncio.sleep(uniform(0.1, 1.0))
+            async with session.post("https://game-domain.blum.codes/api/v1/farming/claim", headers=self.headers) as res:
+                if res.status == 425:
+                    raise ClaimFarmingError("Claim farming failed (it's already claimed)")
+                if res.status == 200:
+                    data = await res.json()
+                    self.available_balance = data.get('availableBalance', "")
+                    self.passes = data.get('playPasses', 0)
+                    logger.success(f"{self.name} | <light-green>Claim daily farming success </light-green>")
+                    return True
+        except ClaimFarmingError as e:
+            logger.warning(f"{self.name} | <yellow>Claim farming failed: {e})</yellow>")
+        except Exception as e:
+            logger.warning(f"{self.name} | <yellow>Claim farming failed: {e})</yellow>")
+        return False
+
+
+
     async def start(self):
         logger.info(f"Account {self.name} | started")
         connector = self.proxy.get_connector() if isinstance(self.proxy, Proxy) else None
         client = CloudflareScraper(headers=self.headers, connector=connector)
         async with client as session:
-            for _ in range(10):
+            periods = 0
+            while True:
                 try:
                     if not self.tg_session.is_connected:
                         await self.tg_app_start()
                     await self.refresh_jwt_token(session)
                     await self.refresh_access_token(session)
-                    
                     self.logged = True
-                    
+
+                    # Check balance
                     await self.check_balance(session)
-
-                    game_id = await self.start_game(session)
-                    sleep = randint(33, 50)
-                    points = randint(120, 180)
-                    logger.info(f"{self.name} | Wait <cyan>{sleep}s</cyan> to finish game...")
-                    await asyncio.sleep(sleep)
-
-                    await self.claim_reward(session, game_id, points)
+                    await asyncio.sleep(2)
                     
-                    logger.info(f"{self.name} | Wait checking balance...")
-                    await asyncio.sleep(randint(5, 10))
+                    # Check 8-hour farming and claim and start new
+                    if bool(self.settings.CLAIM_FARMING):
+                        res = await self.claim_farming(session)
+                        if res:
+                            await asyncio.sleep(2)
+                            await self.start_farming(session)
 
-                    await self.check_balance(session)
+                    # Start games and finish them
+                    games_count = randint(self.settings.MIN_USE_PASSES, self.settings.MAX_USE_PASSES)
+                    if games_count > self.passes:
+                        games_count = self.passes
+                    logger.info(f"{self.name} | <light-green>Start {games_count} games</light-green>")
+                    while True:
+                        try:
+                            if not self.tg_session.is_connected:
+                                await self.tg_app_start()
+                            await self.refresh_jwt_token(session)
+                            await self.refresh_access_token(session)
+                            self.logged = True
 
-                    sleep = randint(50, 150)
-                    logger.info(f"{self.name} | Wait <cyan>{sleep}s</cyan> to start next game...")
-                    await asyncio.sleep(sleep)
+                            if self.passes <= 0:
+                                await self.check_balance(session)
+                                logger.info(f"{self.name} | <light-green>Passes not found</light-green>")
+                                break
+                            if games_count <= 0:
+                                await self.check_balance(session)
+                                logger.info(f"{self.name} | <light-green>Games count empty</light-green>")
+                                break
+
+                            self.passes -= 1
+                            games_count -= 1
+                            game_id = await self.start_game(session)
+                            sleep = uniform(self.settings.GAME_TIME[0], self.settings.GAME_TIME[1])
+                            logger.info(f"{self.name} | Wait <cyan>{sleep}s</cyan> to finish game...")
+                            await asyncio.sleep(sleep)
+                            points = randint(self.settings.GAME_POINTS[0], self.settings.GAME_POINTS[1])
+                            res = await self.claim_reward(session, game_id, points)
+                            if not res:
+                                await asyncio.sleep(2)
+                                await self.check_balance(session)
+                                raise Exception("Claim reward error")
+                            await asyncio.sleep(randint(2, 10))
+
+                        except Exception as e:
+                            logger.error(f"{self.name} | Error: {e} account: {self.name} stopping...")
+                            return
+                    periods += 1
+
+                    if periods == 3:
+                        sleep = randint(3600, 3600 * 3)
+                        logger.info(f"Account {self.name} | Antifrost period | Sleep {sleep}s...")
+                        await asyncio.sleep(sleep)
+                        periods = 0
+                    else:
+                        sleep = randint(200, 1000)
+                        logger.info(f"Account {self.name} | All attempts finished  | Sleep {sleep}s...")
+                        await asyncio.sleep(sleep)
+
+                    # Sleep until next night
+                    await self.night_sleep_check()  
                     
 
                 except Exception as e:
