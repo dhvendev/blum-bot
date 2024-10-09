@@ -289,7 +289,6 @@ class Blum:
         connector = self.proxy.get_connector() if isinstance(self.proxy, Proxy) else None
         client = CloudflareScraper(headers=self.headers, connector=connector)
         async with client as session:
-            periods = 0
             while True:
                 try:
                     if not self.tg_session.is_connected:
@@ -348,17 +347,10 @@ class Blum:
                         except Exception as e:
                             logger.error(f"{self.name} | Error: {e} account: {self.name} stopping...")
                             return
-                    periods += 1
 
-                    if periods == 3:
-                        sleep = randint(3600, 3600 * 3)
-                        logger.info(f"Account {self.name} | Antifrost period | Sleep {sleep}s...")
-                        await asyncio.sleep(sleep)
-                        periods = 0
-                    else:
-                        sleep = randint(200, 1000)
-                        logger.info(f"Account {self.name} | All attempts finished  | Sleep {sleep}s...")
-                        await asyncio.sleep(sleep)
+                    sleep = randint(3600*8 , 3600 * 9)
+                    logger.info(f"Account {self.name} | Antifrost period | Sleep {sleep}s...")
+                    await asyncio.sleep(sleep)
 
                     # Sleep until next night
                     await self.night_sleep_check()  
