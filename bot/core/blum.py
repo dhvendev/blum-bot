@@ -31,6 +31,9 @@ class StartFarmingError(BaseException):
 class ClaimFarmingError(BaseException):
     ...
 
+class DailyRewardError(BaseException):
+    ...
+
 
 class Blum:
     def __init__(self, tg_session: Client,
@@ -248,7 +251,6 @@ class Blum:
             logger.warning(f"{self.name} | <yellow>Start farming failed: {e})</yellow>")
         return False
 
-
     async def claim_farming(self, session: CloudflareScraper) -> bool:
         """
         Claim farming reward.
@@ -283,6 +285,26 @@ class Blum:
         return False
 
 
+    async def daily_reward(self, session: CloudflareScraper):
+        payload = {
+            "query": -180,
+        }
+        async with session.get("https://game-domain.blum.codes/api/v1/daily-reward", headers=self.headers, json=payload) as res:
+            if res.status == 404:
+                logger.warning(f"{self.name} | <yellow>Daily reward already claimed</yellow>")
+                return False
+            if res.status != 200:
+                return False
+        async with session.post("https://game-domain.blum.codes/api/v1/daily-reward", headers=self.headers, json=payload) as res:
+            if res.status != 200:
+                return False
+            if res.status == 200:
+                logger.info(f"{self.name} | <light-green>Daily reward claimed</light-green>")
+                await self.check_balance(session)
+                await asyncio.sleep(uniform(1.0, 1.5))
+                return True
+            
+
 
     async def start(self):
         logger.info(f"Account {self.name} | started")
@@ -296,10 +318,12 @@ class Blum:
                     await self.refresh_jwt_token(session)
                     await self.refresh_access_token(session)
                     self.logged = True
-
                     # Check balance
                     await self.check_balance(session)
                     await asyncio.sleep(2)
+
+                    # Check daily reward
+                    await self.daily_reward(session)
                     
                     # Check 8-hour farming and claim and start new
                     if bool(self.settings.CLAIM_FARMING):
