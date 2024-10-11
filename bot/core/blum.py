@@ -222,7 +222,7 @@ class Blum:
         async with session.post(f"https://game-domain.blum.codes/api/v1/game/claim", headers=self.headers, json=payload) as res:
             if res.status != 200:
                 logger.warning(f"{self.name} | <yellow>Claim reward failed: {res.status})</yellow>")
-                raise ClaimRewardError(f"Claim reward failed gameId: {game_id}")
+                raise ClaimRewardError(f"Claim reward failed gameId: {game_id} status: {res.status}")
             logger.info(f"{self.name} | <light-green>Claim reward: </light-green><cyan>{points}</cyan> with <light-blue>{game_id}</light-blue>")
             return True
 
@@ -378,7 +378,10 @@ class Blum:
 
                     # Sleep until next night
                     await self.night_sleep_check()  
-                    
+                except ClaimRewardError as e:
+                    await self.check_balance(session)
+                    logger.warning(f"{self.name} | <yellow>Claim reward failed: {e})</yellow>")
+                    asyncio.sleep(uniform(1.0, 1.5*3600))
 
                 except Exception as e:
                     logger.error(f"{self.name} | Error: {e}")
