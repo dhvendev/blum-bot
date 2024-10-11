@@ -202,6 +202,11 @@ class Blum:
 
     async def start_game(self, session: CloudflareScraper) -> str | None:
         async with session.post("https://game-domain.blum.codes/api/v1/game/play", headers=self.headers) as res:
+            if res.status == 401:
+                logger.warning(f"{self.name} | <yellow>Start game failed: Unauthorized</yellow>")
+                await self.refresh_jwt_token(session)
+                await self.refresh_access_token(session)
+                return None
             if res.status != 200:
                 logger.warning(f"{self.name} | <yellow>Start game failed: {res.status})</yellow>")
                 return False
@@ -357,6 +362,12 @@ class Blum:
                             self.passes -= 1
                             games_count -= 1
                             game_id = await self.start_game(session)
+                            if not game_id:
+                                await self.check_balance(session)
+                                sleep = randint(3600*8 , 3600 * 9)
+                                logger.info(f"Account {self.name} | Antifrost period | Sleep {sleep}s...")
+                                await asyncio.sleep(sleep)
+                                continue
                             sleep = uniform(self.settings.GAME_TIME[0], self.settings.GAME_TIME[1])
                             logger.info(f"{self.name} | Wait <cyan>{sleep}s</cyan> to finish game...")
                             await asyncio.sleep(sleep)
